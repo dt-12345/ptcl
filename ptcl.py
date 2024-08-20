@@ -226,13 +226,15 @@ def apply_edits(ptcl_path: str, json_path: str) -> bool:
         return False
     changes: Dict[str, Dict[str, Emitter]] = json.loads(Path(json_path).read_text("utf-8"))
     with open(ptcl_path, "rb+") as f:
+        mm: mmap.mmap = mmap.mmap(f.fileno(), 0)
         stream: ReadableWriteableStream = ReadableWriteableStream(f)
+        if (start := mm.find("VFXB    ".encode("utf-8"))) == -1:
+            print("Failed to find file magic")
+            return False
+        stream.seek(start)
         if not verify_file(stream):
-            print("File is not a ptcl file, assuming esetb.byml")
-            stream.seek(0x1000) # can't be bothered to parse the byml lol
-            if not verify_file(stream):
-                print("File is not valid")
-                return False
+            print("File is not valid")
+            return False
         seek_first_block(stream)
         if (offset := find_section(stream, "ESTA")) == 0xffffffff:
             print("No emitter sets found")
