@@ -126,12 +126,12 @@ def iter_emitters(stream: ReadableWriteableStream) -> Dict[str, Emitter]:
                     counts["color0"] = stream.read_u32()
                     counts["alpha0"] = stream.read_u32()
                     counts["color1"] = stream.read_u32()
-                    counts["alpha0"] = stream.read_u32()
+                    counts["alpha1"] = stream.read_u32()
                 with RelativeSeekContext(stream, 0x680):
                     emitter["color_anim0"] = read_anim(stream, counts["color0"])
-                    emitter["alpha_anim0"] = read_anim(stream, counts["color0"])
-                    emitter["color_anim1"] = read_anim(stream, counts["color0"])
-                    emitter["alpha_anim1"] = read_anim(stream, counts["color0"])
+                    emitter["alpha_anim0"] = read_anim(stream, counts["alpha0"])
+                    emitter["color_anim1"] = read_anim(stream, counts["color1"])
+                    emitter["alpha_anim1"] = read_anim(stream, counts["alpha1"])
             print(f"    Emitter found: {name}")
         if (offset := read_header(stream)["next_section_offset"]) == 0xffffffff:
             break
@@ -206,6 +206,11 @@ def apply_emitter_changes(stream: ReadableWriteableStream, changes: Dict[str, Em
                     with RelativeSeekContext(stream, 0xf48):
                         stream.write(pack_float4(emitter["const_color0"]))
                         stream.write(pack_float4(emitter["const_color1"]))
+                    with RelativeSeekContext(stream, 0x80):
+                        stream.write(struct.pack("<I", min(len(emitter["color_anim0"]) - 1, 8)))
+                        stream.write(struct.pack("<I", min(len(emitter["alpha_anim0"]) - 1, 8)))
+                        stream.write(struct.pack("<I", min(len(emitter["color_anim1"]) - 1, 8)))
+                        stream.write(struct.pack("<I", min(len(emitter["alpha_anim1"]) - 1, 8)))
                     with RelativeSeekContext(stream, 0x680):
                         write_anim(stream, emitter["color_anim0"])
                         write_anim(stream, emitter["alpha_anim0"])
