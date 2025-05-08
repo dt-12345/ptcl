@@ -38,6 +38,7 @@ class Emitter(TypedDict):
     color_anim1: List[AnimKeyFrame]
     alpha_anim0: List[AnimKeyFrame]
     alpha_anim1: List[AnimKeyFrame]
+    scale_anim: List[AnimKeyFrame]
 
 def verify_file(stream: ReadableWriteableStream) -> bool:
     with SeekContext(stream):
@@ -81,18 +82,26 @@ def read_header(stream: ReadableWriteableStream) -> BinaryData:
 def read_float4(stream: ReadableWriteableStream) -> Tuple[float, float, float, float]:
     return struct.unpack("<ffff", stream.read(0x10))
 
-def read_anim(stream: ReadableWriteableStream, count: int) -> List[AnimKeyFrame]:
+def read_anim(stream: ReadableWriteableStream, count: int, is_scale: bool = False) -> List[AnimKeyFrame]:
     frames: List[AnimKeyFrame] = []
     if count > 8:
         print(f"Too many keyframes {count} @ {hex(stream.tell())}") # one of the files has it set to 8 and I'm not sure why?
         count = 7
     with SeekContext(stream):
-        for i in range(count + 1): # seems color/alpha anims start at index 1, scale starts at index 4?? unsure what the others are
-            frame: Tuple[float, float, float, float] = read_float4(stream)
-            frames.append(AnimKeyFrame(
-                value = (frame[0], frame[1], frame[2]),
-                keyframe = frame[3]
-            ))
+        if is_scale:
+            for i in range(count + 4): # seems color/alpha anims start at index 1, scale starts at index 4?? unsure what the others are
+                frame: Tuple[float, float, float, float] = read_float4(stream)
+                frames.append(AnimKeyFrame(
+                    value = (frame[0], frame[1], frame[2]),
+                    keyframe = frame[3]
+                ))
+        else:
+            for i in range(count + 1): # seems color/alpha anims start at index 1, scale starts at index 4?? unsure what the others are
+                frame: Tuple[float, float, float, float] = read_float4(stream)
+                frames.append(AnimKeyFrame(
+                    value = (frame[0], frame[1], frame[2]),
+                    keyframe = frame[3]
+                ))
     stream.skip(0x80)
     return frames
 
@@ -121,17 +130,19 @@ def iter_emitters(stream: ReadableWriteableStream) -> Dict[str, Emitter]:
                 with RelativeSeekContext(stream, 0xf48):
                     emitter["const_color0"] = read_float4(stream)
                     emitter["const_color1"] = read_float4(stream)
-                counts: Dict[str, int] = {"color0": 0, "color1": 0, "alpha0": 0, "alpha1": 0}
+                counts: Dict[str, int] = {"color0": 0, "color1": 0, "alpha0": 0, "alpha1": 0, "scale": 0}
                 with RelativeSeekContext(stream, 0x80):
                     counts["color0"] = stream.read_u32()
                     counts["alpha0"] = stream.read_u32()
                     counts["color1"] = stream.read_u32()
                     counts["alpha1"] = stream.read_u32()
+                    counts["scale"] = stream.read_u32()
                 with RelativeSeekContext(stream, 0x680):
                     emitter["color_anim0"] = read_anim(stream, counts["color0"])
                     emitter["alpha_anim0"] = read_anim(stream, counts["alpha0"])
                     emitter["color_anim1"] = read_anim(stream, counts["color1"])
                     emitter["alpha_anim1"] = read_anim(stream, counts["alpha1"])
+                    emitter["scale_anim"] = read_anim(stream, counts["scale"], True)
             print(f"    Emitter found: {name}")
         if (offset := read_header(stream)["next_section_offset"]) == 0xffffffff:
             break
@@ -211,11 +222,14 @@ def apply_emitter_changes(stream: ReadableWriteableStream, changes: Dict[str, Em
                         stream.write(struct.pack("<I", min(len(emitter["alpha_anim0"]) - 1, 8)))
                         stream.write(struct.pack("<I", min(len(emitter["color_anim1"]) - 1, 8)))
                         stream.write(struct.pack("<I", min(len(emitter["alpha_anim1"]) - 1, 8)))
+                        stream.write(struct.pack("<I", min(len(emitter["alpha_anim1"]) - 1, 8)))
+                        stream.write(struct.pack("<I", min(len(emitter["scale_anim"]) - 4, 8)))
                     with RelativeSeekContext(stream, 0x680):
                         write_anim(stream, emitter["color_anim0"])
                         write_anim(stream, emitter["alpha_anim0"])
                         write_anim(stream, emitter["color_anim1"])
                         write_anim(stream, emitter["alpha_anim1"])
+                        write_anim(stream, emitter["scale_anim"])
         if (offset := read_header(stream)["next_section_offset"]) == 0xffffffff:
             break
     
